@@ -1,10 +1,12 @@
 module "site" {
-  source = "github.com/arsw-dev/spa-platform//modules/static-site?ref=250ffe0e3f9b2bd5dd168b24f5975f0e01e8ada9"
+  source = "github.com/arsw-dev/spa-platform//modules/static-site?ref=v1.0.0-rc.2"
 
-  name           = "__SITE_NAME__"
-  domains        = var.domains
-  github_repo    = "__GITHUB_REPO__"
-  plan_role_name = "__SITE_NAME__-terraform-plan"
+  name        = "__SITE_NAME__"
+  domains     = var.domains
+  github_repo = "__GITHUB_REPO__"
+  # The repo's OIDC subject as GitHub reports it (immutable: owner and repo IDs); the deploy role trusts it
+  github_subject_prefix = "__GITHUB_SUBJECT_PREFIX__"
+  plan_role_name        = "__SITE_NAME__-terraform-plan"
 
   validation_record_fqdns = values(module.certificate_dns.record_names)
 }
@@ -13,7 +15,7 @@ module "site" {
 # records point at the distribution, which needs the validated certificate. One resource for both would be a cycle.
 
 module "certificate_dns" {
-  source = "github.com/arsw-dev/spa-platform//modules/cloudflare-dns?ref=250ffe0e3f9b2bd5dd168b24f5975f0e01e8ada9"
+  source = "github.com/arsw-dev/spa-platform//modules/cloudflare-dns?ref=v1.0.0-rc.2"
 
   zone_id = var.cloudflare_zone_id
   records = {
@@ -26,7 +28,7 @@ module "certificate_dns" {
 }
 
 module "site_dns" {
-  source = "github.com/arsw-dev/spa-platform//modules/cloudflare-dns?ref=250ffe0e3f9b2bd5dd168b24f5975f0e01e8ada9"
+  source = "github.com/arsw-dev/spa-platform//modules/cloudflare-dns?ref=v1.0.0-rc.2"
 
   zone_id = var.cloudflare_zone_id
   records = {

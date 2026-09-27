@@ -2,7 +2,7 @@ import type { Field } from './fields.ts';
 import assert from 'node:assert/strict';
 import { describe, it } from 'node:test';
 
-import { byFlag, conflictsWith, FIELDS, problemWith } from './fields.ts';
+import { byFlag, conflictsWith, FIELDS, problemWith, subjectMismatch } from './fields.ts';
 
 const field = (flag: string): Field => FIELDS.find(each => each.flag === flag)!;
 
@@ -34,12 +34,34 @@ describe('gitHub repository', () => {
   });
 });
 
+describe('GitHub OIDC subject prefix', () => {
+  it('accepts the immutable and legacy forms', () => {
+    for (const prefix of ['repo:acme-co@186983646/site@1390922369', 'repo:acme-co/site', 'repo:Acme-Co@1/My.Site_2@2']) {
+      assert.equal(problemWith(field('github-subject-prefix'), prefix), undefined, prefix);
+    }
+  });
+
+  it('refuses anything else, including a full subject or wildcards', () => {
+    for (const prefix of ['acme-co/site', 'repo:acme-co/site:', 'repo:acme-co/site:pull_request', 'repo:acme-co/*', 'repo:acme-co@x/site', 'null', '']) {
+      assert.notEqual(problemWith(field('github-subject-prefix'), prefix), undefined, prefix);
+    }
+  });
+
+  it('must name the same repository as github-repo, capitalisation included', () => {
+    const repo = { __GITHUB_REPO__: 'acme-co/site' };
+    assert.equal(subjectMismatch({ ...repo, __GITHUB_SUBJECT_PREFIX__: 'repo:acme-co@1/site@2' }), undefined);
+    assert.equal(subjectMismatch({ ...repo, __GITHUB_SUBJECT_PREFIX__: 'repo:acme-co/site' }), undefined);
+    assert.match(subjectMismatch({ ...repo, __GITHUB_SUBJECT_PREFIX__: 'repo:Acme-Co@1/site@2' })!, /is for Acme-Co\/site, not acme-co\/site/);
+    assert.match(subjectMismatch({ ...repo, __GITHUB_SUBJECT_PREFIX__: 'repo:acme-co@1/website@2' })!, /not acme-co\/site/);
+  });
+});
+
 describe('conflictsWith', () => {
-  const values = { __SITE_NAME__: 'acme', __SITE_TITLE__: 'Acme', __AWS_ACCOUNT_ID__: '123456789012', __GITHUB_REPO__: 'acme-co/site', __CLOUDFLARE_ZONE_ID__: '0'.repeat(32) };
+  const values = { __SITE_NAME__: 'acme', __SITE_TITLE__: 'Acme', __AWS_ACCOUNT_ID__: '123456789012', __GITHUB_REPO__: 'acme-co/site', __GITHUB_SUBJECT_PREFIX__: 'repo:acme-co@1/site@2', __CLOUDFLARE_ZONE_ID__: '0'.repeat(32) };
   const first = byFlag(values);
 
   it('records the values by flag, so the marker holds no tokens for setup to fill in', () => {
-    assert.deepEqual(Object.keys(first), ['name', 'title', 'aws-account', 'github-repo', 'cloudflare-zone']);
+    assert.deepEqual(Object.keys(first), ['name', 'title', 'aws-account', 'github-repo', 'github-subject-prefix', 'cloudflare-zone']);
     assert.doesNotMatch(JSON.stringify(first), /__[A-Z_]+__/);
   });
 
