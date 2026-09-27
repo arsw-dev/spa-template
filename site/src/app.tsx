@@ -1,4 +1,4 @@
-// Filled in by setup (scripts/setup.ts)
+// The site's name, shown on the page
 const SITE_TITLE = '__SITE_TITLE__';
 
 const App = () => {

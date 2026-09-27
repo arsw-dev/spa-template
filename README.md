@@ -23,11 +23,14 @@ git clone https://github.com/arsw-dev/spa-template.git <site> && cd <site>
 node scripts/setup.ts                 # asks for the values above; or pass --name --title --aws-account --github-repo --cloudflare-zone
 pnpm install
 git add -A && git commit -m "Set up <site>"
+# Before pushing: in the client's repo, create the `production` environment, limited to `main` (see below)
 git remote set-url origin https://github.com/<client-org>/<repo>.git
 git push -u origin main
 ```
 
 Then follow **First-time setup** in the generated README.
+
+Create the environment **before** the first push. The push runs Deploy, and a job that names an environment that doesn't exist creates it, unprotected. That first Deploy still fails, because the variables only exist after first-time setup: that's expected.
 
 Setup:
 
