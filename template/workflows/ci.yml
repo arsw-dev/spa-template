@@ -17,7 +17,7 @@ permissions:
 jobs:
   ci:
     name: CI
-    uses: arsw-dev/spa-platform/.github/workflows/site-ci.yml@250ffe0e3f9b2bd5dd168b24f5975f0e01e8ada9 # main
+    uses: arsw-dev/spa-platform/.github/workflows/site-ci.yml@880c72e40d7ddc655b7efc2a4f90fb8cf9947a5f # v1.0.0-rc.2
     permissions:
       contents: read
       id-token: write

@@ -1,5 +1,5 @@
 module "bootstrap" {
-  source = "github.com/arsw-dev/spa-platform//modules/account-bootstrap?ref=250ffe0e3f9b2bd5dd168b24f5975f0e01e8ada9"
+  source = "github.com/arsw-dev/spa-platform//modules/account-bootstrap?ref=v1.0.0-rc.2"
 
   name              = "__SITE_NAME__"
   state_bucket_name = "__SITE_NAME__-tfstate-__AWS_ACCOUNT_ID__-us-east-1"
