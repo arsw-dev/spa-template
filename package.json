@@ -1,0 +1,26 @@
+{
+  "name": "site-repo",
+  "type": "module",
+  "private": true,
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "lint": "eslint",
+    "lint:fix": "eslint . --fix",
+    "prepare": "husky"
+  },
+  "devDependencies": {
+    "@antfu/eslint-config": "catalog:linting",
+    "@eslint-react/eslint-plugin": "catalog:linting",
+    "@types/node": "catalog:tooling",
+    "eslint": "catalog:linting",
+    "eslint-plugin-format": "catalog:linting",
+    "eslint-plugin-react-hooks": "catalog:linting",
+    "eslint-plugin-react-refresh": "catalog:linting",
+    "husky": "catalog:tooling",
+    "lint-staged": "catalog:tooling",
+    "typescript": "catalog:tooling"
+  },
+  "lint-staged": {
+    "*": "pnpm lint"
+  }
+}

@@ -1,0 +1,14 @@
+# Node
+node_modules
+dist
+
+# Terraform
+.terraform/
+*.tfstate
+*.tfstate.backup
+*.tfvars
+
+# Misc
+.DS_Store
+*.local
+.env

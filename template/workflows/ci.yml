@@ -1,0 +1,41 @@
+name: CI
+
+# CI comes from spa-platform's reusable workflow, pinned to a commit. CI Result stays here so the required check's
+# name doesn't depend on the platform.
+
+on:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    name: CI
+    uses: arsw-dev/spa-platform/.github/workflows/site-ci.yml@250ffe0e3f9b2bd5dd168b24f5975f0e01e8ada9 # main
+    permissions:
+      contents: read
+      id-token: write
+      pull-requests: write
+    with:
+      plan-role-arn: arn:aws:iam::__AWS_ACCOUNT_ID__:role/__SITE_NAME__-terraform-plan
+      function-name: __SITE_NAME__-viewer-request
+    secrets:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+
+  # The only required status check. Fails if the CI jobs failed or were cancelled; a skipped Plan (Dependabot) is fine.
+  result:
+    name: CI Result
+    runs-on: ubuntu-latest
+    needs: [ci]
+    if: always()
+
+    steps:
+      - name: Check Job Results
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1

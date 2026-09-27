@@ -1,0 +1,11 @@
+# The state bucket doesn't exist until this root's first apply creates it. After that apply:
+#   mv backend.tf.pending backend.tf && terraform init -migrate-state
+terraform {
+  backend "s3" {
+    bucket       = "__SITE_NAME__-tfstate-__AWS_ACCOUNT_ID__-us-east-1"
+    key          = "bootstrap/terraform.tfstate"
+    region       = "us-east-1"
+    use_lockfile = true
+    encrypt      = true
+  }
+}
