@@ -1,0 +1,147 @@
+name: Template CI
+
+# CI for the template itself (setup removes this file from generated sites). Test Setup generates a site from a copy
+# with sample values, including a title that needs escaping, and checks it's a clean, working project.
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+concurrency:
+  group: template-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  checks:
+    name: Checks
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set Up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set Up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Install Dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        run: pnpm lint
+
+  test-setup:
+    name: Test Setup
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Set Up pnpm
+        uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+
+      - name: Set Up Node
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          node-version: 24
+          cache: pnpm
+
+      - name: Set Up Terraform
+        uses: hashicorp/setup-terraform@dfe3c3f87815947d99a8997f908cb6525fc44e9e # v4.0.1
+        with:
+          terraform_version: 1.15.6
+          terraform_wrapper: false
+
+      - name: Generate a Site
+        run: |
+          site="$RUNNER_TEMP/site"
+          mkdir "$site"
+          git archive HEAD | tar -x -C "$site"
+          git -C "$site" init -q
+          node "$site/scripts/setup.ts" \
+            --name obrien-sons \
+            --title "O'Brien & Sons" \
+            --aws-account 123456789012 \
+            --github-repo obrien-co/site \
+            --cloudflare-zone 0123456789abcdef0123456789abcdef
+          echo "SITE=$site" >> "$GITHUB_ENV"
+
+      - name: Check Template Files Are Gone
+        working-directory: ${{ env.SITE }}
+        run: |
+          failed=0
+          for path in template scripts .github/workflows/template-ci.yml; do
+            if [ -e "$path" ]; then echo "::error::$path should have been removed"; failed=1; fi
+          done
+          if grep -rnE '__(SITE_NAME|SITE_TITLE|AWS_ACCOUNT_ID|GITHUB_REPO|CLOUDFLARE_ZONE_ID)__' .; then
+            echo "::error::placeholders left"; failed=1
+          fi
+          if grep -n 'template-only' eslint.config.mjs; then echo "::error::template-only lint lines left"; failed=1; fi
+          grep -q "<title>O&#39;Brien &amp; Sons</title>" site/index.html || { echo "::error::title not HTML-escaped"; failed=1; }
+          grep -q "const SITE_TITLE = 'O\\\\'Brien & Sons';" site/src/app.tsx || { echo "::error::title not string-escaped"; failed=1; }
+          exit "$failed"
+
+      - name: Install Dependencies
+        working-directory: ${{ env.SITE }}
+        run: pnpm install --frozen-lockfile
+
+      - name: Lint
+        if: ${{ !cancelled() }}
+        working-directory: ${{ env.SITE }}
+        run: pnpm lint
+
+      - name: Build Site
+        if: ${{ !cancelled() }}
+        working-directory: ${{ env.SITE }}
+        run: |
+          pnpm --filter site build
+          test -f site/dist/.vite/manifest.json || { echo "::error::no Vite manifest"; exit 1; }
+
+      - name: Validate Terraform
+        if: ${{ !cancelled() }}
+        working-directory: ${{ env.SITE }}
+        run: |
+          terraform fmt -check -recursive infra
+          for root in infra/bootstrap infra; do
+            terraform -chdir="$root" init -backend=false -input=false
+            terraform -chdir="$root" validate
+          done
+
+      - name: Lint Generated Workflows
+        if: ${{ !cancelled() }}
+        working-directory: ${{ env.SITE }}
+        env:
+          VERSION: 1.7.12
+          SHA256: 8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8
+        run: |
+          curl -sSfLo "$RUNNER_TEMP/actionlint.tar.gz" "https://github.com/rhysd/actionlint/releases/download/v${VERSION}/actionlint_${VERSION}_linux_amd64.tar.gz"
+          echo "${SHA256}  $RUNNER_TEMP/actionlint.tar.gz" | sha256sum --check
+          tar xzf "$RUNNER_TEMP/actionlint.tar.gz" -C "$RUNNER_TEMP" actionlint
+          "$RUNNER_TEMP/actionlint" -color
+
+  # The required status check
+  result:
+    name: CI Result
+    runs-on: ubuntu-latest
+    needs: [checks, test-setup]
+    if: always()
+
+    steps:
+      - name: Check Job Results
+        if: contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled')
+        run: exit 1
