@@ -44,6 +44,10 @@ jobs:
       - name: Lint
         run: pnpm lint
 
+      - name: Test Setup Script
+        if: ${{ !cancelled() }}
+        run: node --test "scripts/*.test.ts"
+
   test-setup:
     name: Test Setup
     runs-on: ubuntu-latest

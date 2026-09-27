@@ -5,28 +5,14 @@
 //   node scripts/setup.ts --name acme --title "Acme Co" --aws-account 123456789012 \
 //     --github-repo acme-co/site --cloudflare-zone 0123456789abcdef0123456789abcdef
 
+import type { Values } from './fields.ts';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
+
 import { parseArgs } from 'node:util';
-
-type Field = {
-  flag: string;
-  token: string;
-  prompt: string;
-  pattern: RegExp;
-  hint: string;
-};
-
-// The state bucket (<name>-tfstate-<account>-us-east-1) is the longest name built from the site name; S3 allows 63
-const FIELDS: Field[] = [
-  { flag: 'name', token: '__SITE_NAME__', prompt: 'Site name (used in AWS resource names)', pattern: /^[a-z][a-z0-9-]{0,28}[a-z0-9]$/, hint: '2-30 lowercase letters, digits and hyphens, starting with a letter' },
-  { flag: 'title', token: '__SITE_TITLE__', prompt: 'Site title (shown on the page)', pattern: /^[\p{L}\p{N} .,&'!?:-]{1,80}$/u, hint: 'up to 80 letters, digits, spaces and . , & \' ! ? : -' },
-  { flag: 'aws-account', token: '__AWS_ACCOUNT_ID__', prompt: 'Client AWS account ID', pattern: /^\d{12}$/, hint: '12 digits' },
-  { flag: 'github-repo', token: '__GITHUB_REPO__', prompt: 'GitHub repository (owner/name)', pattern: /^[\w-]+\/[\w.-]+$/, hint: 'owner/name' },
-  { flag: 'cloudflare-zone', token: '__CLOUDFLARE_ZONE_ID__', prompt: 'Cloudflare zone ID', pattern: /^[0-9a-f]{32}$/, hint: '32 hex characters, from the zone\'s overview page' },
-];
+import { byFlag, conflictsWith, FIELDS, problemWith } from './fields.ts';
 
 const TOKEN_PATTERN = /__(?:SITE_NAME|SITE_TITLE|AWS_ACCOUNT_ID|GITHUB_REPO|CLOUDFLARE_ZONE_ID)__/g;
 // .test() on a /g regex is stateful (lastIndex carries over between calls), so detection uses a non-global copy
@@ -35,6 +21,9 @@ const SKIP_DIRS = new Set(['.git', 'node_modules', '.terraform', 'dist']);
 const TEXT_EXTENSIONS = new Set(['.css', '.html', '.json', '.md', '.pending', '.svg', '.tf', '.ts', '.tsx', '.txt', '.yaml', '.yml']);
 
 const root = join(import.meta.dirname, '..');
+const scripts = import.meta.dirname;
+// The first run's values, so a re-run after a partial failure can't mix in different ones. It goes with template/
+const marker = join(root, 'template', 'setup-values.json');
 
 const escapeHtml = (value: string): string =>
   value.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;').replaceAll('"', '&quot;').replaceAll('\'', '&#39;');
@@ -59,7 +48,8 @@ const listTextFiles = async (dir: string): Promise<string[]> => {
   const files: string[] = [];
   for (const entry of await readdir(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    if (path === import.meta.filename) {
+    // scripts/ holds the tokens themselves, and goes at the end
+    if (path === scripts) {
       continue;
     }
     if (entry.isDirectory()) {
@@ -74,11 +64,11 @@ const listTextFiles = async (dir: string): Promise<string[]> => {
   return files;
 };
 
-const collectValues = async (): Promise<Map<string, string>> => {
+const collectValues = async (): Promise<Values> => {
   const { values: args } = parseArgs({
     options: Object.fromEntries(FIELDS.map(field => [field.flag, { type: 'string' as const }])),
   });
-  const values = new Map<string, string>();
+  const values: Values = {};
   const missing = FIELDS.filter(field => !args[field.flag]);
   const readline = missing.length > 0 && process.stdin.isTTY
     ? createInterface({ input: process.stdin, output: process.stdout })
@@ -88,9 +78,10 @@ const collectValues = async (): Promise<Map<string, string>> => {
     for (const field of FIELDS) {
       const given = args[field.flag];
       let value = typeof given === 'string' ? given.trim() : undefined;
-      while (value === undefined || !field.pattern.test(value)) {
+      let problem = value === undefined ? field.hint : problemWith(field, value);
+      while (problem !== undefined) {
         if (value !== undefined) {
-          console.error(`  "${value}" isn't valid: ${field.hint}`);
+          console.error(`  "${value}" isn't valid: ${problem}`);
           if (!readline) {
             process.exit(1);
           }
@@ -100,8 +91,9 @@ const collectValues = async (): Promise<Map<string, string>> => {
           process.exit(1);
         }
         value = (await readline.question(`${field.prompt}: `)).trim();
+        problem = problemWith(field, value);
       }
-      values.set(field.token, value);
+      values[field.token] = value!;
     }
   }
   finally {
@@ -118,13 +110,21 @@ const main = async (): Promise<void> => {
 
   const values = await collectValues();
 
+  const previous: Values = existsSync(marker) ? JSON.parse(await readFile(marker, 'utf8')) : {};
+  const conflicts = conflictsWith(previous, values);
+  if (conflicts.length > 0) {
+    console.error(`An earlier run already filled in different values:\n  ${conflicts.join('\n  ')}\nRe-run with the earlier values, or start again from a fresh copy of the template.`);
+    process.exit(1);
+  }
+  await writeFile(marker, `${JSON.stringify(byFlag(values), null, 2)}\n`);
+
   console.log('==> Filling in values');
   for (const file of await listTextFiles(root)) {
     const text = await readFile(file, 'utf8');
     if (!hasToken(text)) {
       continue;
     }
-    const filled = text.replaceAll(TOKEN_PATTERN, token => valueFor(token, values.get(token)!, file));
+    const filled = text.replaceAll(TOKEN_PATTERN, token => valueFor(token, values[token]!, file));
     await writeFile(file, filled);
     console.log(`    ${relative(root, file).split(sep).join('/')}`);
   }
@@ -137,12 +137,14 @@ const main = async (): Promise<void> => {
   console.log('==> Moving the site workflows into place');
   const workflows = join(root, '.github', 'workflows');
   await mkdir(workflows, { recursive: true });
-  for (const name of await readdir(join(root, 'template', 'workflows'))) {
+  for (const name of existsSync(join(root, 'template', 'workflows')) ? await readdir(join(root, 'template', 'workflows')) : []) {
     await rename(join(root, 'template', 'workflows', name), join(workflows, name));
   }
 
   console.log('==> Removing the template-only files');
-  await rename(join(root, 'template', 'README.md'), join(root, 'README.md'));
+  if (existsSync(join(root, 'template', 'README.md'))) {
+    await rename(join(root, 'template', 'README.md'), join(root, 'README.md'));
+  }
   await rm(join(root, 'template'), { recursive: true });
   await rm(join(workflows, 'template-ci.yml'), { force: true });
   await rm(join(root, 'scripts'), { recursive: true });
@@ -159,6 +161,7 @@ const main = async (): Promise<void> => {
   }
 
   console.log(`==> Done. Next: pnpm install, then follow "First-time setup" in README.md.`);
+  console.log(`    The deploy and plan roles trust ${values.__GITHUB_REPO__} exactly as typed: GitHub's capitalisation must match.`);
 };
 
 await main();
