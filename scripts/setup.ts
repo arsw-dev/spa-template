@@ -4,17 +4,21 @@
 //   node scripts/setup.ts                   # asks for each value
 //   node scripts/setup.ts --name acme --title "Acme Co" --aws-account 123456789012 \
 //     --github-repo acme-co/site --cloudflare-zone 0123456789abcdef0123456789abcdef
+//
+// The GitHub OIDC subject prefix is read from GitHub with `gh` (signed in, with access to the repo); pass
+// --github-subject-prefix to skip that.
 
 import type { Values } from './fields.ts';
+import { execFile } from 'node:child_process';
 import { existsSync } from 'node:fs';
 import { mkdir, readdir, readFile, rename, rm, writeFile } from 'node:fs/promises';
 import { join, relative, sep } from 'node:path';
 import { createInterface } from 'node:readline/promises';
 
-import { parseArgs } from 'node:util';
-import { byFlag, conflictsWith, FIELDS, problemWith } from './fields.ts';
+import { parseArgs, promisify } from 'node:util';
+import { byFlag, conflictsWith, FIELDS, problemWith, subjectMismatch } from './fields.ts';
 
-const TOKEN_PATTERN = /__(?:SITE_NAME|SITE_TITLE|AWS_ACCOUNT_ID|GITHUB_REPO|CLOUDFLARE_ZONE_ID)__/g;
+const TOKEN_PATTERN = /__(?:SITE_NAME|SITE_TITLE|AWS_ACCOUNT_ID|GITHUB_REPO|GITHUB_SUBJECT_PREFIX|CLOUDFLARE_ZONE_ID)__/g;
 // .test() on a /g regex is stateful (lastIndex carries over between calls), so detection uses a non-global copy
 const hasToken = (text: string): boolean => new RegExp(TOKEN_PATTERN.source).test(text);
 const SKIP_DIRS = new Set(['.git', 'node_modules', '.terraform', 'dist']);
@@ -64,6 +68,20 @@ const listTextFiles = async (dir: string): Promise<string[]> => {
   return files;
 };
 
+// GitHub's immutable subjects (the default for new repos) contain IDs nobody should have to look up by hand
+const lookUpSubjectPrefix = async (repo: string): Promise<string | undefined> => {
+  try {
+    const { stdout } = await promisify(execFile)('gh', ['api', `repos/${repo}/actions/oidc/customization/sub`, '--jq', '.sub_claim_prefix']);
+    const prefix = stdout.trim();
+    console.log(`    Read ${repo}'s OIDC subject prefix from GitHub: ${prefix}`);
+    return prefix;
+  }
+  catch {
+    console.error(`    Couldn't read ${repo}'s OIDC subject prefix with gh (installed, signed in, with access to the repo?)`);
+    return undefined;
+  }
+};
+
 const collectValues = async (): Promise<Values> => {
   const { values: args } = parseArgs({
     options: Object.fromEntries(FIELDS.map(field => [field.flag, { type: 'string' as const }])),
@@ -78,6 +96,9 @@ const collectValues = async (): Promise<Values> => {
     for (const field of FIELDS) {
       const given = args[field.flag];
       let value = typeof given === 'string' ? given.trim() : undefined;
+      if (value === undefined && field.token === '__GITHUB_SUBJECT_PREFIX__') {
+        value = await lookUpSubjectPrefix(values.__GITHUB_REPO__!);
+      }
       let problem = value === undefined ? field.hint : problemWith(field, value);
       while (problem !== undefined) {
         if (value !== undefined) {
@@ -98,6 +119,11 @@ const collectValues = async (): Promise<Values> => {
   }
   finally {
     readline?.close();
+  }
+  const mismatch = subjectMismatch(values);
+  if (mismatch) {
+    console.error(`${mismatch}. Check --github-repo against the repository's URL.`);
+    process.exit(1);
   }
   return values;
 };
@@ -161,7 +187,6 @@ const main = async (): Promise<void> => {
   }
 
   console.log(`==> Done. Next: pnpm install, then follow "First-time setup" in README.md.`);
-  console.log(`    The deploy and plan roles trust ${values.__GITHUB_REPO__} exactly as typed: GitHub's capitalisation must match.`);
 };
 
 await main();

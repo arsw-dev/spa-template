@@ -45,8 +45,26 @@ const FIELDS: Field[] = [
       return undefined;
     },
   },
+  {
+    flag: 'github-subject-prefix',
+    token: '__GITHUB_SUBJECT_PREFIX__',
+    prompt: 'GitHub OIDC subject prefix (gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix)',
+    pattern: /^repo:[A-Za-z0-9-]+(?:@\d+)?\/[\w.-]+(?:@\d+)?$/,
+    hint: 'repo:owner@<id>/name@<id> (or repo:owner/name for older repos), as GitHub reports it',
+  },
   { flag: 'cloudflare-zone', token: '__CLOUDFLARE_ZONE_ID__', prompt: 'Cloudflare zone ID', pattern: /^[0-9a-f]{32}$/, hint: '32 hex characters, from the zone\'s overview page' },
 ];
+
+// The AWS roles trust the subject prefix, so it must be the same repository as github-repo, capitalisation included
+const subjectMismatch = (values: Values): string | undefined => {
+  const repo = values.__GITHUB_REPO__;
+  const prefix = values.__GITHUB_SUBJECT_PREFIX__;
+  if (repo === undefined || prefix === undefined) {
+    return undefined;
+  }
+  const named = prefix.replace(/^repo:/, '').replaceAll(/@\d+/g, '');
+  return named === repo ? undefined : `the subject prefix ${prefix} is for ${named}, not ${repo}`;
+};
 
 // Why a value is refused, or undefined when it's valid
 const problemWith = (field: Field, value: string): string | undefined =>
@@ -59,5 +77,5 @@ const conflictsWith = (previous: Values, values: Values): string[] =>
   FIELDS.filter(field => previous[field.flag] !== undefined && previous[field.flag] !== values[field.token])
     .map(field => `--${field.flag} was "${previous[field.flag]}", now "${values[field.token]}"`);
 
-export { byFlag, conflictsWith, FIELDS, problemWith };
+export { byFlag, conflictsWith, FIELDS, problemWith, subjectMismatch };
 export type { Field, Values };

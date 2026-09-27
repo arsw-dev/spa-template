@@ -82,6 +82,7 @@ jobs:
             --title "O'Brien & Sons" \
             --aws-account 123456789012 \
             --github-repo obrien-co/site \
+            --github-subject-prefix repo:obrien-co@111/site@222 \
             --cloudflare-zone 0123456789abcdef0123456789abcdef
           echo "SITE=$site" >> "$GITHUB_ENV"
 
@@ -92,7 +93,7 @@ jobs:
           for path in template scripts .github/workflows/template-ci.yml; do
             if [ -e "$path" ]; then echo "::error::$path should have been removed"; failed=1; fi
           done
-          if grep -rnE '__(SITE_NAME|SITE_TITLE|AWS_ACCOUNT_ID|GITHUB_REPO|CLOUDFLARE_ZONE_ID)__' .; then
+          if grep -rnE '__(SITE_NAME|SITE_TITLE|AWS_ACCOUNT_ID|GITHUB_REPO|GITHUB_SUBJECT_PREFIX|CLOUDFLARE_ZONE_ID)__' .; then
             echo "::error::placeholders left"; failed=1
           fi
           if grep -n 'template-only' eslint.config.mjs; then echo "::error::template-only lint lines left"; failed=1; fi

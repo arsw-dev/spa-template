@@ -8,13 +8,14 @@ The starting point for a client site on [spa-platform](https://github.com/arsw-d
 
 The client owns every account; you work in them as a collaborator. Gather:
 
-| Value              | Where it comes from                                                                                             |
-| ------------------ | --------------------------------------------------------------------------------------------------------------- |
-| Site name          | You choose it: 2–30 lowercase letters, digits and hyphens. It's used in AWS resource names                      |
-| Site title         | The client's name for the site                                                                                  |
-| AWS account ID     | The client's account, after they've run the contractor-role one-click link from the latest spa-platform release |
-| GitHub repository  | An empty repo the client created in their org, with you added as an admin                                       |
-| Cloudflare zone ID | The client's zone (its overview page), with you added as a member                                               |
+| Value               | Where it comes from                                                                                                                                                                                                                                                                      |
+| ------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Site name           | You choose it: 2–30 lowercase letters, digits and hyphens. It's used in AWS resource names                                                                                                                                                                                               |
+| Site title          | The client's name for the site                                                                                                                                                                                                                                                           |
+| AWS account ID      | The client's account, after they've run the contractor-role one-click link from the latest spa-platform release                                                                                                                                                                          |
+| GitHub repository   | An empty repo the client created in their org, with you added as an admin                                                                                                                                                                                                                |
+| OIDC subject prefix | Nothing to gather: setup reads it from GitHub with `gh` (signed in, with access to the repo). It holds the owner and repo IDs the AWS roles trust. Without `gh`, pass `--github-subject-prefix` from `gh api repos/<owner>/<repo>/actions/oidc/customization/sub --jq .sub_claim_prefix` |
+| Cloudflare zone ID  | The client's zone (its overview page), with you added as a member                                                                                                                                                                                                                        |
 
 ## Creating a site
 
