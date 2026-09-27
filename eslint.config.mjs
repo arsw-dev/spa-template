@@ -26,10 +26,11 @@ export default antfuConfig({
     'unicorn/filename-case': ['error', { case: 'kebabCase', ignore: ['README.md'] }],
   },
 }, {
-  // Command-line scripts report progress on stdout
+  // Command-line scripts report progress on stdout, and their tests use node:test (setup removes scripts/ anyway)
   files: ['scripts/**/*'],
   rules: {
     'no-console': ['off'],
     'node/no-process-env': ['off'],
+    'test/no-import-node-test': ['off'],
   },
 });
